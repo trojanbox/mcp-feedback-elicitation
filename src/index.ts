@@ -9,7 +9,7 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { 
+import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   TextContent,
@@ -21,6 +21,7 @@ import {
 import { FeedbackSession } from './session/feedback-session.js';
 import { createFeedbackSchema } from './utils/schema-builder.js';
 import { handleElicitationResponse } from './utils/response-handler.js';
+import { interactiveFeedbackPrompt } from './config/prompt.js';
 
 /**
  * MCP 服务器类
@@ -34,13 +35,13 @@ class FeedbackElicitationServer {
     this.server = new Server(
       {
         name: "mcp-feedback-elicitation",
-        version: "1.0.0"
+        version: "1.1.13"
       },
       {
         capabilities: {
           tools: {},
           elicitation: {
-            timeout: 86400000  // 24小时超时，与客户端配置保持一致
+            timeout: 86400000
           }
         }
       }
@@ -71,7 +72,7 @@ class FeedbackElicitationServer {
     this.heartbeatInterval = setInterval(() => {
       this.cleanupExpiredSessions();
       console.error(`[MCP DEBUG] Heartbeat - Active sessions: ${this.activeSessions.size}`);
-    }, 15000); // 每15秒检查一次，更频繁地清理过期会话
+    }, 60000);
   }
 
   /**
@@ -82,7 +83,7 @@ class FeedbackElicitationServer {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    
+
     console.error(`[MCP DEBUG] Cleaning up ${this.activeSessions.size} active sessions`);
     this.activeSessions.clear();
   }
@@ -97,32 +98,18 @@ class FeedbackElicitationServer {
         tools: [
           {
             name: "interactive_feedback",
-            description: `Interactive feedback collection tool for LLM agents.
-
-    USAGE RULES:
-    1. During any process, task, or conversation, whether asking, replying, or completing phased tasks, you must call this tool to ask for feedback.
-    2. Unless receiving termination instructions, all steps must repeatedly call this tool.
-    3. Whenever user feedback is received, if the feedback content is not empty, you must call this tool again and adjust behavior based on the feedback content.
-    4. Only when the user explicitly indicates "end" or "no more interaction needed" can you stop calling this tool, and the process is considered complete.
-    5. You should summarize what have done, and provide project directory through args to let user know what you have done to provide feedback for next step.
-
-    Args:
-        project_directory: Project directory path for context
-        summary: Summary of AI work completed for user review
-
-    Returns:
-        list: List containing TextContent and MCPImage objects representing user feedback`,
+            description: interactiveFeedbackPrompt,
             inputSchema: {
               type: "object",
               properties: {
                 project_directory: {
                   type: "string",
-                  description: "项目目录路径",
+                  description: "项目路径",
                   default: "."
                 },
                 summary: {
-                  type: "string", 
-                  description: "AI 工作完成的摘要说明",
+                  type: "string",
+                  description: "摘要说明",
                   default: "我已完成了您请求的任务。"
                 }
               },
@@ -150,7 +137,7 @@ class FeedbackElicitationServer {
    */
   private async handleInteractiveFeedback(params: any): Promise<any> {
     let sessionId: string | null = null;
-    
+
     try {
       // 创建会话
       sessionId = this.generateSessionId();
@@ -168,7 +155,7 @@ class FeedbackElicitationServer {
       const message = `${params.summary || "我已完成了您请求的任务。"}\n\n请提供您的反馈意见：`;
 
       console.error(`[MCP DEBUG] Starting elicitation for session ${sessionId}, active sessions: ${this.activeSessions.size}`);
-      
+
       // 发送 elicitation 请求，传递长超时选项
       const elicitResult: ElicitResult = await this.server.elicitInput({
         message: message,
@@ -181,12 +168,13 @@ class FeedbackElicitationServer {
 
       // 处理用户响应
       const result = handleElicitationResponse(elicitResult, session);
+      const responseText = result.feedback ? `=== 用户反馈 ===\n${result.feedback}` : "=== 用户反馈 ===\n无反馈内容";
 
       return {
         content: [
           {
             type: "text",
-            text: result.feedback ? `=== 用戶反馈 ===\n${result.feedback}` : "=== 用戶反馈 ===\n无反馈内容"
+            text: `=== 原则重申 ===\n` + interactiveFeedbackPrompt + `\n\n${responseText}`
           } as TextContent
         ]
       };
@@ -194,24 +182,24 @@ class FeedbackElicitationServer {
     } catch (error) {
       console.error(`[MCP DEBUG] Error in session ${sessionId}:`, error);
       console.error(`[MCP DEBUG] Error type: ${error?.constructor?.name}, message: ${error instanceof Error ? error.message : String(error)}`);
-      
+
       // 特殊处理超时错误
       if (error instanceof Error && error.message.includes('Request timed out')) {
         return {
           content: [
             {
-              type: "text", 
+              type: "text",
               text: `超时提示: MCP 协议超时。这通常是因为用户界面响应超时。\n\n如需继续提供反馈，请重新调用此工具。`
             } as TextContent
           ],
           isError: false  // 不标记为错误，因为这是可预期的超时情况
         };
       }
-      
+
       return {
         content: [
           {
-            type: "text", 
+            type: "text",
             text: `错误: ${error instanceof Error ? error.message : String(error)}`
           } as TextContent
         ],
@@ -223,7 +211,7 @@ class FeedbackElicitationServer {
         console.error(`[MCP DEBUG] Cleaning up session ${sessionId} in finally block`);
         this.activeSessions.delete(sessionId);
       }
-      
+
       // 立即清理所有过期会话
       this.cleanupExpiredSessions();
       console.error(`[MCP DEBUG] After cleanup, active sessions: ${this.activeSessions.size}`);
@@ -235,8 +223,8 @@ class FeedbackElicitationServer {
    */
   private cleanupExpiredSessions(): void {
     const now = Date.now();
-    const maxAge = 5 * 60 * 1000; // 5分钟过期时间，更快清理
-    
+    const maxAge = 25 * 60 * 60 * 1000;
+
     let cleanedCount = 0;
     this.activeSessions.forEach((session, id) => {
       const sessionData = session.getData();
@@ -246,7 +234,7 @@ class FeedbackElicitationServer {
         cleanedCount++;
       }
     });
-    
+
     if (cleanedCount > 0) {
       console.error(`[MCP DEBUG] Cleaned up ${cleanedCount} expired sessions, remaining: ${this.activeSessions.size}`);
     }
