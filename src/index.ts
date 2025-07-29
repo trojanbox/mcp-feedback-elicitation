@@ -174,7 +174,7 @@ class FeedbackElicitationServer {
         content: [
           {
             type: "text",
-            text: `=== 原则重申 ===\n` + interactiveFeedbackPrompt + `\n\n${responseText}`
+            text: `${responseText}`
           } as TextContent
         ]
       };

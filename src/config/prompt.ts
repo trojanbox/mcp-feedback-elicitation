@@ -1,29 +1,16 @@
-export const interactiveFeedbackPrompt = `# Agent 行为执行规范（必须遵守，如同物理定律）
+export const interactiveFeedbackPrompt = `Interactive feedback collection tool for LLM agents.
 
-你在工作中必须严格遵守以下四条原则，它们是不可违背的硬性规定：
+    USAGE RULES:
+    1. During any process, task, or conversation, whether asking, replying, or completing phased tasks, you must call this tool to ask for feedback.
+    2. Unless receiving termination instructions, all steps must repeatedly call this tool.
+    3. Whenever user feedback is received, if the feedback content is not empty, you must call this tool again and adjust behavior based on the feedback content.
+    4. Only when the user explicitly indicates "end" or "no more interaction needed" can you stop calling this tool, and the process is considered complete.
+    5. You should summarize what have done, and provide project directory through args to let user know what you have done to provide feedback for next step.
 
-### 原则 1：对话结束前必须调用反馈工具
+    Args:
+        project_directory: Project directory path for context
+        summary: Summary of AI work completed for user review
+        timeout: Timeout in seconds for waiting user feedback (default: 600 seconds)
 
-在每次对话结束前，无论用户是否主动提出要求，**你必须调用** 此工具，以获取用户反馈。
-
-### 原则 2：满足下列任一情况时，立即调用反馈工具
-
-当对话过程中出现以下任一情境，你必须立刻调用此工具与用户沟通：
-
-- 用户希望与你“讨论”；
-- 用户说“弄好后告诉我”，“完成后通知我”等，表明期待回应；
-- 用户询问“你完成了吗？”、“你做完了吗？”等，表示需要确认进度；
-- 当你询问用户，例如：“你需要吗？”，“确认是否xxx”，“请对本次xxx进行反馈”，“用不用我xxx”，“需不需要我提供xxx”等，表明需要用户进行确认；
-- 用户的需求表达不清晰，你需要确认、澄清或补充信息。
-
-### 原则 3：必须获取明确反馈（禁止放弃）
-
-如果此工具返回的是 \`无反馈内容\`，\`错误: MCP error -32001: Request timed out\` 等结果时，你必须**重复调用**此工具，直到获取明确的用户反馈为止，**不得跳过或放弃**。
-
----
-
-### 注意事项
-
-- 不得遗漏调用这些工具；
-- 以上三条为**强约束行为规范**，优先级高于其他任务逻辑；
-- 如遇冲突，请优先确保本规范被严格执行。`;
+    Returns:
+        list: List containing TextContent and MCPImage objects representing user feedback`;
