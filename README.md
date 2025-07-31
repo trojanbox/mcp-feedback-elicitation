@@ -6,7 +6,7 @@
 
 mcp.json 中追加如下配置：
 
-```json
+```json5
 "mcp-feedback-elicitation": {
     "command": "npx",
     "args": [
@@ -17,7 +17,7 @@ mcp.json 中追加如下配置：
         "interactive_feedback"
     ],
     "env": {
-        "MCP_DEBUG": "false"
+        "FEEDBACK_TEMPLATE": "=== 用户反馈 ===\n{{feedback}}" // 调整反馈信息模板
     }
 }
 ```

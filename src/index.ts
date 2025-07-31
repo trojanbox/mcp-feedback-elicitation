@@ -168,7 +168,19 @@ class FeedbackElicitationServer {
 
       // 处理用户响应
       const result = handleElicitationResponse(elicitResult, session);
-      const responseText = result.feedback ? `=== 用户反馈 ===\n${result.feedback}` : "=== 用户反馈 ===\n无反馈内容";
+      
+      // 检查是否有自定义模板
+      const template = process.env.FEEDBACK_TEMPLATE;
+      let responseText: string;
+      
+      if (template && template.trim()) {
+        // 使用模板，替换 {{feedback}} 占位符
+        const feedbackContent = result.feedback || "无反馈内容";
+        responseText = template.replace(/\{\{feedback\}\}/g, feedbackContent);
+      } else {
+        // 使用默认格式
+        responseText = result.feedback ? `=== 用户反馈 ===\n${result.feedback}` : "=== 用户反馈 ===\n无反馈内容";
+      }
 
       return {
         content: [
