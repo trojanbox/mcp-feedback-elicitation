@@ -94,11 +94,15 @@ class FeedbackElicitationServer {
   private setupHandlers(): void {
     // 工具列表处理器
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+      // 检查是否有自定义 prompt
+      const customPrompt = process.env.FEEDBACK_PROMPT;
+      const toolDescription = customPrompt && customPrompt.trim() ? customPrompt.trim() : interactiveFeedbackPrompt;
+
       return {
         tools: [
           {
             name: "interactive_feedback",
-            description: interactiveFeedbackPrompt,
+            description: toolDescription,
             inputSchema: {
               type: "object",
               properties: {
