@@ -9,7 +9,6 @@ export interface FeedbackSessionData {
   startTime: number;
   endTime?: number;
   userFeedback?: string;
-  userImages?: string[];
   userAction?: string;
   status: 'waiting' | 'completed' | 'error';
 }
@@ -53,7 +52,7 @@ export class FeedbackSession {
    */
   updateStatus(status: FeedbackSessionData['status']): void {
     this.data.status = status;
-    if (status === 'completed' || status === 'error') {
+    if ((status === 'completed' || status === 'error') && !this.data.endTime) {
       this.data.endTime = Date.now();
     }
   }
@@ -61,9 +60,8 @@ export class FeedbackSession {
   /**
    * 设置用户反馈
    */
-  setUserFeedback(feedback: string, images?: string[], action?: string): void {
+  setUserFeedback(feedback: string, action?: string): void {
     this.data.userFeedback = feedback;
-    this.data.userImages = images;
     this.data.userAction = action;
     this.updateStatus('completed');
   }

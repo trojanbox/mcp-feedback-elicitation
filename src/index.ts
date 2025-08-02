@@ -12,16 +12,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
-  TextContent,
   Tool,
   CallToolRequest,
-  ElicitRequest,
   ElicitResult
 } from '@modelcontextprotocol/sdk/types.js';
-import { FeedbackSession } from './session/feedback-session.js';
-import { createFeedbackSchema } from './utils/schema-builder.js';
-import { handleElicitationResponse } from './utils/response-handler.js';
-import { interactiveFeedbackPrompt } from './config/prompt.js';
+import { FeedbackSession } from './session/feedback-session';
+import { createFeedbackSchema } from './utils/schema-builder';
+import { handleElicitationResponse } from './utils/response-handler';
+import { interactiveFeedbackPrompt } from './config/prompt';
 
 /**
  * MCP 服务器类
@@ -29,7 +27,7 @@ import { interactiveFeedbackPrompt } from './config/prompt.js';
 class FeedbackElicitationServer {
   private server: Server;
   private activeSessions: Map<string, FeedbackSession> = new Map();
-  private heartbeatInterval: NodeJS.Timeout | null = null;
+  // 已移除自动清理定时器，精简代码
 
   constructor() {
     this.server = new Server(
@@ -57,34 +55,23 @@ class FeedbackElicitationServer {
   private setupProcessHandlers(): void {
     // 优雅关闭处理
     process.on('SIGINT', () => {
-      console.error('[MCP DEBUG] Received SIGINT, shutting down gracefully...');
+      console.log('[MCP DEBUG] Received SIGINT, shutting down gracefully...');
       this.cleanup();
       process.exit(0);
     });
 
     process.on('SIGTERM', () => {
-      console.error('[MCP DEBUG] Received SIGTERM, shutting down gracefully...');
+      console.log('[MCP DEBUG] Received SIGTERM, shutting down gracefully...');
       this.cleanup();
       process.exit(0);
     });
-
-    // 启动心跳检查
-    this.heartbeatInterval = setInterval(() => {
-      this.cleanupExpiredSessions();
-      console.error(`[MCP DEBUG] Heartbeat - Active sessions: ${this.activeSessions.size}`);
-    }, 60000);
   }
 
   /**
    * 清理资源
    */
   private cleanup(): void {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-
-    console.error(`[MCP DEBUG] Cleaning up ${this.activeSessions.size} active sessions`);
+    console.log(`[MCP DEBUG] Cleaning up ${this.activeSessions.size} active sessions`);
     this.activeSessions.clear();
   }
 
@@ -139,121 +126,92 @@ class FeedbackElicitationServer {
   /**
    * 处理交互式反馈请求
    */
-  private async handleInteractiveFeedback(params: any): Promise<any> {
+  private async handleInteractiveFeedback(params: { project_directory?: string; summary?: string }): Promise<any> {
     let sessionId: string | null = null;
 
     try {
+      // 标准化参数
+      const projectDirectory = params.project_directory?.trim() || ".";
+      const summary = params.summary?.trim() || "我已完成了您请求的任务。";
+
       // 创建会话
       sessionId = this.generateSessionId();
-      const session = new FeedbackSession(
-        sessionId,
-        params.project_directory || ".",
-        params.summary || "我已完成了您请求的任务。"
-      );
+      const session = new FeedbackSession(sessionId, projectDirectory, summary);
       this.activeSessions.set(sessionId, session);
 
-      // 构建 elicitation schema
-      const schema = createFeedbackSchema(params.summary || "我已完成了您请求的任务。");
-
-      // 构建提示消息
-      const message = `${params.summary || "我已完成了您请求的任务。"}\n\n请提供您的反馈意见：`;
-
-      console.error(`[MCP DEBUG] Starting elicitation for session ${sessionId}, active sessions: ${this.activeSessions.size}`);
-
-      // 发送 elicitation 请求，传递长超时选项
-      const elicitResult: ElicitResult = await this.server.elicitInput({
-        message: message,
-        requestedSchema: schema as any
-      }, {
-        timeout: 86400000
-      });
-
-      console.error(`[MCP DEBUG] Elicitation completed for session ${sessionId}`);
+      // 发送 elicitation 请求
+      const elicitResult = await this.performElicitation(session, summary);
 
       // 处理用户响应
-      const result = handleElicitationResponse(elicitResult, session);
-      
-      // 检查是否有自定义模板
-      const template = process.env.FEEDBACK_TEMPLATE;
-      let responseText: string;
-      
-      if (template && template.trim()) {
-        // 使用模板，替换 {{feedback}} 占位符
-        const feedbackContent = result.feedback || "无反馈内容";
-        responseText = template.replace(/\{\{feedback\}\}/g, feedbackContent);
-      } else {
-        // 使用默认格式
-        responseText = result.feedback ? `=== 用户反馈 ===\n${result.feedback}` : "=== 用户反馈 ===\n无反馈内容";
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `${responseText}`
-          } as TextContent
-        ]
-      };
+      return this.formatResponse(elicitResult, session);
 
     } catch (error) {
-      console.error(`[MCP DEBUG] Error in session ${sessionId}:`, error);
-      console.error(`[MCP DEBUG] Error type: ${error?.constructor?.name}, message: ${error instanceof Error ? error.message : String(error)}`);
-
-      // 特殊处理超时错误
-      if (error instanceof Error && error.message.includes('Request timed out')) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `超时提示: MCP 协议超时。这通常是因为用户界面响应超时。\n\n如需继续提供反馈，请重新调用此工具。`
-            } as TextContent
-          ],
-          isError: false  // 不标记为错误，因为这是可预期的超时情况
-        };
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `错误: ${error instanceof Error ? error.message : String(error)}`
-          } as TextContent
-        ],
-        isError: true
-      };
+      return this.handleError(error, sessionId);
     } finally {
       // 确保会话总是被清理
       if (sessionId) {
-        console.error(`[MCP DEBUG] Cleaning up session ${sessionId} in finally block`);
         this.activeSessions.delete(sessionId);
       }
-
-      // 立即清理所有过期会话
-      this.cleanupExpiredSessions();
-      console.error(`[MCP DEBUG] After cleanup, active sessions: ${this.activeSessions.size}`);
     }
   }
 
   /**
-   * 清理过期会话
+   * 执行 Elicitation
    */
-  private cleanupExpiredSessions(): void {
-    const now = Date.now();
-    const maxAge = 25 * 60 * 60 * 1000;
+  private async performElicitation(session: FeedbackSession, summary: string): Promise<ElicitResult> {
+    const schema = createFeedbackSchema(summary);
+    const message = `${summary}\n\n请提供您的反馈意见：`;
 
-    let cleanedCount = 0;
-    this.activeSessions.forEach((session, id) => {
-      const sessionData = session.getData();
-      if (now - sessionData.startTime > maxAge) {
-        console.error(`[MCP DEBUG] Cleaning up expired session ${id} (age: ${Math.round((now - sessionData.startTime) / 1000)}s)`);
-        this.activeSessions.delete(id);
-        cleanedCount++;
-      }
-    });
+    console.log(`[MCP DEBUG] Starting elicitation for session ${session.id}`);
+    return this.server.elicitInput(
+      { message, requestedSchema: schema as any },
+      { timeout: 86400000 }
+    );
+  }
 
-    if (cleanedCount > 0) {
-      console.error(`[MCP DEBUG] Cleaned up ${cleanedCount} expired sessions, remaining: ${this.activeSessions.size}`);
+  /**
+   * 格式化响应
+   */
+  private formatResponse(elicitResult: ElicitResult, session: FeedbackSession): any {
+    const result = handleElicitationResponse(elicitResult, session);
+    const template = process.env.FEEDBACK_TEMPLATE;
+    let responseText: string;
+
+    if (template?.trim()) {
+      const feedbackContent = result.feedback || "无反馈内容";
+      responseText = template.replace(/\{\{feedback\}\}/g, feedbackContent);
+    } else {
+      responseText = result.feedback ? `=== 用户反馈 ===\n${result.feedback}` : "=== 用户反馈 ===\n无反馈内容";
     }
+
+    return {
+      content: [{ type: "text", text: responseText }]
+    };
+  }
+
+  /**
+   * 处理错误
+   */
+  private handleError(error: any, sessionId: string | null): any {
+    console.log(`[MCP DEBUG] Error in session ${sessionId}:`, error);
+
+    if (error instanceof Error && error.message.includes('Request timed out')) {
+      return {
+        content: [{ 
+          type: "text", 
+          text: `超时提示: MCP 协议超时。这通常是因为用户界面响应超时。\n\n如需继续提供反馈，请重新调用此工具。`
+        }],
+        isError: false
+      };
+    }
+
+    return {
+      content: [{ 
+        type: "text", 
+        text: `错误: ${error instanceof Error ? error.message : String(error)}`
+      }],
+      isError: true
+    };
   }
 
   /**
@@ -268,12 +226,12 @@ class FeedbackElicitationServer {
    */
   async start(): Promise<void> {
     try {
-      console.error('[MCP DEBUG] Starting MCP Feedback Elicitation Server...');
+      console.log('[MCP DEBUG] Starting MCP Feedback Elicitation Server...');
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-      console.error('[MCP DEBUG] Server started successfully');
+      console.log('[MCP DEBUG] Server started successfully');
     } catch (error) {
-      console.error('[MCP DEBUG] Failed to start server:', error);
+      console.log('[MCP DEBUG] Failed to start server:', error);
       throw error;
     }
   }
@@ -286,9 +244,11 @@ async function main() {
 }
 
 // 仅在直接运行时执行
-main().catch((error) => {
-  console.error("Server failed to start:", error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.log("Server failed to start:", error);
+    process.exit(1);
+  });
+}
 
 export { FeedbackElicitationServer };

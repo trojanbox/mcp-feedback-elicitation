@@ -34,7 +34,7 @@ export function handleElicitationResponse(
         const action = 'continue'; // 固定为 continue，不再从用户输入获取
 
         // 更新会话数据
-        session.setUserFeedback(feedback, [], action);
+        session.setUserFeedback(feedback, action);
 
         return {
           success: true,
