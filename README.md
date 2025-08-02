@@ -1,6 +1,7 @@
 # MCP Feedback Elicitation Server
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+
 [中文文档](README.zh.md)
 
 An interactive feedback elicitation server based on the Model Context Protocol (MCP). It uses the MCP Elicitation feature to replace traditional Web UI solutions, providing a standardized user feedback collection experience.

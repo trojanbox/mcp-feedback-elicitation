@@ -1,6 +1,7 @@
 # MCP Feedback Elicitation Server
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+
 [English Readme](README.md)
 
 一个基于 Model Context Protocol (MCP) 的交互式反馈收集服务器，使用 MCP Elicitation 功能替代传统的 Web UI 方案，提供标准化的用户反馈收集体验。
