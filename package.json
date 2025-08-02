@@ -17,15 +17,15 @@
     "interactive"
   ],
   "author": "Assistant",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wangquan/feedback-mcp.git"
+    "url": "git+https://github.com/trojanbox/mcp-feedback-elicitation.git"
   },
   "bugs": {
-    "url": "https://github.com/wangquan/feedback-mcp/issues"
+    "url": "https://github.com/trojanbox/mcp-feedback-elicitation/issues"
   },
-  "homepage": "https://github.com/wangquan/feedback-mcp#readme",
+  "homepage": "https://github.com/trojanbox/mcp-feedback-elicitation#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0"
   },
